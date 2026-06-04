@@ -26,7 +26,7 @@ def main():
         print("Error: OPENAI_API_KEY environment variable not set.")
         sys.exit(1)
 
-    folder = Path(__file__).parent
+    folder = Path.cwd()
 
     # If a specific file is passed as argument, use that; otherwise scan folder
     if len(sys.argv) > 1:
