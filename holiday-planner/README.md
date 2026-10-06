@@ -32,9 +32,12 @@ holiday-planner --port 9000 --no-open
 holiday-planner --data /tmp/test-days.json   # use a scratch file, e.g. for testing
 ```
 
-It is a small server on `127.0.0.1:8737`, reachable only from this machine. It rebuilds the
-page on every load, so CONFIG edits show on refresh, and saves every booking to the
-days-off file. There is no HTML file to open or publish.
+It is a small server on `127.0.0.1:8737`, reachable only from this machine. It saves every
+booking to the days-off file. There is no HTML file to open or publish.
+
+**Restart the server after editing the script** (Ctrl+C, then `holiday-planner`). The page
+is rebuilt on every load, but from the code loaded at startup, so changes to CONFIG or
+anything else in the script do not show on refresh until it is restarted.
 
 No dependencies — Python 3 standard library only.
 
