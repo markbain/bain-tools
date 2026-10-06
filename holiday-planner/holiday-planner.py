@@ -306,8 +306,8 @@ select{font:inherit;font-size:13px;color:var(--ink);background:var(--card);borde
 input[type=checkbox]{accent-color:var(--ink);margin:0}
 
 /* Days off */
-.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:22px}
-@media (max-width:800px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:22px}
+@media (max-width:480px){.stats{grid-template-columns:minmax(0,1fr)}}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 .stat .v{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;font-size:24px;line-height:1.15}
 .stat .v small{font-size:13px;color:var(--mute);margin-left:4px}
@@ -587,9 +587,6 @@ SCRIPT = """<script>
       String(t.getDate()).padStart(2, "0");
   }
   var TODAY = iso(new Date());
-  function daysUntil(d) {
-    return Math.round((new Date(d + "T12:00:00") - new Date(TODAY + "T12:00:00")) / 864e5);
-  }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 
@@ -645,13 +642,10 @@ SCRIPT = """<script>
   }
 
   function renderOff(pl, all) {
-    var next = all.filter(function (b) { return b.from > TODAY; })[0];
     var stats = [
       [pl.taken + '<small>' + (pl.taken === 1 ? "day" : "days") + '</small>', "Taken from the allowance"],
       [pl.ahead + '<small>' + (pl.ahead === 1 ? "day" : "days") + '</small>', "Booked ahead"],
-      [pl.left + '<small>of ' + pl.total + '</small>', "Still to place"],
-      [next ? daysUntil(next.from) + '<small>' + (daysUntil(next.from) === 1 ? "day" : "days") + '</small>' : "–",
-       next ? "Until the next break, " + label(next.from, true) : "No break booked ahead"]
+      [pl.left + '<small>of ' + pl.total + '</small>', "Still to place"]
     ];
     document.getElementById("stats").innerHTML = stats.map(function (s) {
       return '<div class="stat"><div class="v">' + s[0] + '</div><div class="l">' + esc(s[1]) + '</div></div>';
