@@ -99,8 +99,7 @@ MUSIC_CLASHES = {                     # holidays that still have music classes t
 # One entitlement year, matching the planning year: 1 Sept to 31 Aug. Re-based from the
 # calendar year on 2026-09-09 — see "The Planning Year" in Notes/KEY CONCEPTS.md.
 ENTITLEMENT = {
-    "2026-2027": {"habils": 22, "habils_taken": 0, "recovery": 5, "recovery_taken": 0,
-                  "note": "Use by 31 Aug 2027 — nothing carries over"},
+    "2026-2027": {"habils": 22, "habils_taken": 0, "recovery": 5, "recovery_taken": 0},
 }
 
 PUBLIC_HOLIDAYS = 16                  # 14 national/regional + 2 Sabadell local
@@ -435,7 +434,7 @@ details.key summary{cursor:pointer;font-size:12.5px;color:var(--mute);width:max-
 BODY = """<div class="wrap">
 <header class="top">
   <div>
-    <div class="eyebrow">Planning year __PYL__ · Sabadell &amp; Barcelona</div>
+    <div class="eyebrow">Planning year __PYL__</div>
     <h1>Holiday Planner</h1>
   </div>
   <div class="summary" id="summary"></div>
@@ -551,7 +550,6 @@ SCRIPT = """<script>
 (function () {
   var POOLS = __POOLS__;
   var RECOVERY = __RECOVERY__;   // public holidays on a weekend, each earning a Recovery Day
-  var RECOVERY_PLAN = __RECOVERY_PLAN__;   // working days the suggested plan funds from them
   var YEAR = Object.keys(POOLS)[0];
   var UI_KEY = "holiday-planner:ui";
   // Days off live in a JSON file next to the ledger. The server builds the page with the
@@ -638,16 +636,12 @@ SCRIPT = """<script>
     }).filter(function (b) { return b.mine.length + b.hols.length > 0; });
   }
 
-  function renderSummary(pl, bs) {
-    var next = bs.filter(function (b) { return b.to >= TODAY; })[0];
-    var nextTxt = next ? (next.from <= TODAY ? "on a break now" :
-      label(next.from, true) + ", in " + plural(daysUntil(next.from), "day")) : "nothing ahead";
+  function renderSummary(pl) {
     var st = { live: ["live", "Saved"], saving: ["", "Saving…"],
                error: ["error", "Not saved"] }[mode];
     document.getElementById("summary").innerHTML =
       '<span class="pill status ' + st[0] + '">' + st[1] + '</span>' +
-      '<span class="pill"><b>' + pl.left + '</b> left to place</span>' +
-      '<span class="pill">Next: <b>' + esc(nextTxt) + '</b></span>';
+      '<span class="pill"><b>' + pl.left + '</b> left to place</span>';
   }
 
   function renderOff(pl, all) {
@@ -783,10 +777,6 @@ SCRIPT = """<script>
       html += '<p class="hint warn" style="margin-top:8px">The allowance is set to ' + pl.p.recovery +
         ' Recovery Days but the calendar has ' + RECOVERY.length + '. Check ENTITLEMENT in the script.</p>';
     }
-    if (RECOVERY_PLAN.length) {
-      html += '<p class="hint" style="margin-top:10px">The suggested plan uses them on ' +
-        RECOVERY_PLAN.map(function (d) { return label(d, true); }).join(", ") + '.</p>';
-    }
     document.getElementById("reccard").innerHTML = html;
   }
 
@@ -806,7 +796,7 @@ SCRIPT = """<script>
       '<div class="row"><span>Taken</span><b>' + pl.taken + '</b></div>' +
       '<div class="row"><span>Booked ahead</span><b>' + pl.ahead + '</b></div>' +
       '<div class="row total"><span>Still to place</span><b>' + pl.left + '</b></div>' +
-      '</div>' + (pl.p.note ? '<p class="hint" style="margin-top:10px">' + esc(pl.p.note) + '</p>' : "");
+      '</div>';
     var w = Array.from(worked).sort();
     document.getElementById("wlist").innerHTML = w.length ? w.map(function (d) {
       return '<button class="chip" data-rm="' + d + '" title="Worked this day. Click to undo"><i class="' +
@@ -835,7 +825,7 @@ SCRIPT = """<script>
     renderMonths();
     renderControls();
     renderCells();
-    renderSummary(pl, bs);
+    renderSummary(pl);
     renderOff(pl, bs);
     renderBest(pl);
     renderAllowance(pl);
@@ -990,17 +980,15 @@ def render(data=None):
     grids = "\n".join(month_html(a, b) for a, b in months)
     pools = json.dumps({str(y): {"habils": v["habils"], "habilsTaken": v.get("habils_taken", 0),
                                  "recovery": v["recovery"],
-                                 "recoveryTaken": v.get("recovery_taken", 0),
-                                 "note": v.get("note", "")}
+                                 "recoveryTaken": v.get("recovery_taken", 0)}
                         for y, v in sorted(ENTITLEMENT.items())})
     py = f"{Y0}-{Y1}"
     body = BODY.replace("__PYL__", f"{Y0}–{str(Y1)[2:]}").replace("__GRIDS__", grids)
     current = json.dumps({k: data[k] for k in ("rev", "booked", "worked")}).replace("</", "<\\/")
     recovery = json.dumps([{"date": x.isoformat(), "name": RED[x]}
                            for x in sorted(RED) if x.weekday() >= 5 and START <= x <= END])
-    recovery_plan = json.dumps(sorted(x.isoformat() for x, v in PLANNED.items() if v == "recuperació"))
     script = (SCRIPT.replace("__POOLS__", pools).replace("__PY__", py).replace("__DATA__", current)
-              .replace("__RECOVERY__", recovery).replace("__RECOVERY_PLAN__", recovery_plan))
+              .replace("__RECOVERY__", recovery))
     fonts = ("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600"
              "&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap")
     return f'''<!doctype html>
