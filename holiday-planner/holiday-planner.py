@@ -235,7 +235,7 @@ CSS = """
   --red-b:#A32D35; --red-t:#FFF1EF; --red-soft:#EDD5D7; --red-ink:#8E2730;
   --school-bg:#F3D79B; --school-t:#63450F;
   --uni-bg:#B7D3EE; --uni-t:#1A3D61;
-  --wknd:#E7E2DB; --local:#7A2E6A; --local-t:#FCEEF7; --local-soft:#E4D5E1; --local-ink:#6B295D;
+  --wknd:#E7E2DB; --local:#2E6322; --local-t:#F0F7EB; --local-soft:#D5E0D3; --local-ink:#275219;
   --ok:#2F6B45;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
@@ -244,7 +244,7 @@ CSS = """
   --red-b:#96303A; --red-t:#FFE7E4; --red-soft:#4B2424; --red-ink:#FFE7E4;
   --school-bg:#7A5A1E; --school-t:#F7E2B4;
   --uni-bg:#2B4C70; --uni-t:#D3E6F8;
-  --wknd:#282119; --local:#8C3A78; --local-t:#FBE3F3; --local-soft:#47273A; --local-ink:#FBE3F3;
+  --wknd:#282119; --local:#35702B; --local-t:#EAF7E2; --local-soft:#293A1F; --local-ink:#EAF7E2;
   --ok:#7CC294;
 }}
 :root[data-theme="dark"]{
@@ -253,7 +253,7 @@ CSS = """
   --red-b:#96303A; --red-t:#FFE7E4; --red-soft:#4B2424; --red-ink:#FFE7E4;
   --school-bg:#7A5A1E; --school-t:#F7E2B4;
   --uni-bg:#2B4C70; --uni-t:#D3E6F8;
-  --wknd:#282119; --local:#8C3A78; --local-t:#FBE3F3; --local-soft:#47273A; --local-ink:#FBE3F3;
+  --wknd:#282119; --local:#35702B; --local-t:#EAF7E2; --local-soft:#293A1F; --local-ink:#EAF7E2;
   --ok:#7CC294;
 }
 *{box-sizing:border-box}
