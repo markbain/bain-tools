@@ -232,28 +232,28 @@ CSS = """
 :root{
   color-scheme:light;
   --paper:#FAF8F5; --card:#FFFFFF; --ink:#241F1D; --mute:#6E635E; --line:#DFD7CF;
-  --red-b:#A32D35; --red-t:#FFF1EF;
+  --red-b:#A32D35; --red-t:#FFF1EF; --red-soft:#EDD5D7; --red-ink:#8E2730;
   --school-bg:#F3D79B; --school-t:#63450F;
   --uni-bg:#B7D3EE; --uni-t:#1A3D61;
-  --wknd:#E7E2DB; --local:#7A2E6A; --local-t:#FCEEF7;
+  --wknd:#E7E2DB; --local:#7A2E6A; --local-t:#FCEEF7; --local-soft:#E4D5E1; --local-ink:#6B295D;
   --ok:#2F6B45;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   color-scheme:dark;
   --paper:#16120F; --card:#221D18; --ink:#EFE7E0; --mute:#A3968D; --line:#3C322B;
-  --red-b:#96303A; --red-t:#FFE7E4;
+  --red-b:#96303A; --red-t:#FFE7E4; --red-soft:#4B2424; --red-ink:#FFE7E4;
   --school-bg:#7A5A1E; --school-t:#F7E2B4;
   --uni-bg:#2B4C70; --uni-t:#D3E6F8;
-  --wknd:#282119; --local:#8C3A78; --local-t:#FBE3F3;
+  --wknd:#282119; --local:#8C3A78; --local-t:#FBE3F3; --local-soft:#47273A; --local-ink:#FBE3F3;
   --ok:#7CC294;
 }}
 :root[data-theme="dark"]{
   color-scheme:dark;
   --paper:#16120F; --card:#221D18; --ink:#EFE7E0; --mute:#A3968D; --line:#3C322B;
-  --red-b:#96303A; --red-t:#FFE7E4;
+  --red-b:#96303A; --red-t:#FFE7E4; --red-soft:#4B2424; --red-ink:#FFE7E4;
   --school-bg:#7A5A1E; --school-t:#F7E2B4;
   --uni-bg:#2B4C70; --uni-t:#D3E6F8;
-  --wknd:#282119; --local:#8C3A78; --local-t:#FBE3F3;
+  --wknd:#282119; --local:#8C3A78; --local-t:#FBE3F3; --local-soft:#47273A; --local-ink:#FBE3F3;
   --ok:#7CC294;
 }
 *{box-sizing:border-box}
@@ -344,8 +344,6 @@ button.chip .x{opacity:.55}
   max-width:900px}
 
 /* Plan */
-.plan-cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start}
-@media (max-width:1000px){.plan-cols{grid-template-columns:1fr}}
 .cal{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:18px}
 .cal.one{grid-template-columns:minmax(0,420px)}
 .cal.one .c{font-size:14px}
@@ -384,17 +382,20 @@ button.chip .x{opacity:.55}
 .c.local.worked{color:var(--local);box-shadow:inset 0 0 0 1.5px var(--local)}
 .c.wknd.worked{color:var(--mute);box-shadow:inset 0 0 0 1.5px var(--mute)}
 .c.worked span{text-decoration:line-through;text-decoration-thickness:1.5px}
+/* A red or local day wears its markers badly at full strength: the booked ring, the worked
+   outline and the run highlight all sink into the fill. Drop the fill to a soft wash of the
+   same hue so the marker, and the date under it, stay readable. */
+.c.red.booked,.c.red.worked,.c.red.run{background:var(--red-soft);color:var(--red-ink)}
+.c.local.booked,.c.local.worked,.c.local.run{background:var(--local-soft);color:var(--local-ink)}
+.c.red.worked,.c.local.worked{box-shadow:inset 0 0 0 1.5px currentColor}
+.c.past.worked{opacity:.8}
 details.key{margin:-6px 0 16px}
 details.key summary{cursor:pointer;font-size:12.5px;color:var(--mute);width:max-content}
 .keyrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .k{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--mute);
   border:1px solid var(--line);border-radius:999px;padding:3px 10px 3px 4px;background:var(--card)}
 .sw{width:15px;height:15px;border-radius:4px;flex:none;border:1px solid rgba(0,0,0,.12)}
-.side-panel{position:sticky;top:16px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
-@media (max-width:1000px){.side-panel{position:static}}
-.best-filters{display:flex;flex-direction:column;gap:8px;margin:12px 0}
-.best-filters .field{justify-content:space-between}
-.best{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.best{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;max-width:560px}
 .pick{width:100%;display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;align-items:baseline;text-align:left;
   font:inherit;font-size:12.5px;color:var(--ink);background:var(--paper);border:1px solid var(--line);
   border-radius:6px;padding:7px 9px;cursor:pointer}
@@ -443,6 +444,7 @@ BODY = """<div class="wrap">
 <nav class="tabs" role="tablist">
   <button class="tab" role="tab" data-tab="off" aria-controls="p-off">Days off</button>
   <button class="tab" role="tab" data-tab="plan" aria-controls="p-plan">Plan</button>
+  <button class="tab" role="tab" data-tab="best" aria-controls="p-best">Best days</button>
   <button class="tab" role="tab" data-tab="allow" aria-controls="p-allow">Allowance</button>
 </nav>
 
@@ -487,36 +489,34 @@ BODY = """<div class="wrap">
       <span class="k"><span class="sw" style="background:var(--card);box-shadow:inset 0 0 0 1.5px var(--red-b)"></span>Worked (Compensation Day)</span>
     </div>
   </details>
-  <div class="plan-cols">
-    <main class="cal" id="cal">
+  <main class="cal" id="cal">
 __GRIDS__
-    </main>
-    <aside class="side-panel">
-      <h2>Best days</h2>
-      <p class="hint">Ranked by the unbroken break each day would give you. Hover to see the break,
-      click to book.</p>
-      <div class="best-filters">
-        <label class="field">Who must be free
-          <select data-ui="who">
-            <option value="core">School side</option>
-            <option value="everyone">Everyone, Alba too</option>
-          </select>
-        </label>
-        <label class="field">Break of at least
-          <select data-ui="min">
-            <option value="1">any length</option>
-            <option value="3">3 days</option>
-            <option value="4">4 days</option>
-            <option value="5">5 days</option>
-          </select>
-        </label>
-        <label class="check"><input type="checkbox" data-ui="noclash"> Skip music-class days</label>
-      </div>
-      <ol class="best" id="best"></ol>
-    </aside>
-  </div>
+  </main>
   <p class="hint" style="margin-top:16px">Click a working day to book it, and again to release it.
   Click a public holiday or a weekend you worked to earn a Compensation Day.</p>
+</section>
+
+<section class="panel" id="p-best" role="tabpanel">
+  <div class="toolbar">
+    <label class="field">Who must be free
+      <select data-ui="who">
+        <option value="core">School side</option>
+        <option value="everyone">Everyone, Alba too</option>
+      </select>
+    </label>
+    <label class="field">Break of at least
+      <select data-ui="min">
+        <option value="1">any length</option>
+        <option value="3">3 days</option>
+        <option value="4">4 days</option>
+        <option value="5">5 days</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" data-ui="noclash"> Skip music-class days</label>
+  </div>
+  <p class="hint">Ranked by the unbroken break each day would give you. Each row names the break
+  it opens; click a day to book it.</p>
+  <ol class="best" id="best"></ol>
 </section>
 
 <section class="panel" id="p-allow" role="tabpanel">
