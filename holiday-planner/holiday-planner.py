@@ -235,7 +235,7 @@ CSS = """
   --red-b:#A32D35; --red-t:#FFF1EF; --red-soft:#EDD5D7; --red-ink:#8E2730;
   --school-bg:#F3D79B; --school-t:#63450F;
   --uni-bg:#B7D3EE; --uni-t:#1A3D61;
-  --wknd:#E7E2DB; --local:#D9C7E8; --local-t:#42265B; --local-soft:#EFE7F6; --local-ink:#42265B;
+  --wknd:#E7E2DB; --local:#C4ABDB; --local-t:#42265B; --local-soft:#E7DCF1; --local-ink:#42265B;
   --ok:#2F6B45;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
