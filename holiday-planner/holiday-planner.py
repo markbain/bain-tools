@@ -377,16 +377,15 @@ button.chip .x{opacity:.55}
 .c.past{opacity:.45}
 .c.past.booked{opacity:.8}
 .c.today{outline:2px solid var(--ink);outline-offset:1px;z-index:1}
-.c.run{box-shadow:inset 0 0 0 2px var(--ink);opacity:1}
 .c.worked{background:var(--card);color:var(--red-b);box-shadow:inset 0 0 0 1.5px var(--red-b)}
 .c.local.worked{color:var(--local);box-shadow:inset 0 0 0 1.5px var(--local)}
 .c.wknd.worked{color:var(--mute);box-shadow:inset 0 0 0 1.5px var(--mute)}
 .c.worked span{text-decoration:line-through;text-decoration-thickness:1.5px}
-/* A red or local day wears its markers badly at full strength: the booked ring, the worked
-   outline and the run highlight all sink into the fill. Drop the fill to a soft wash of the
-   same hue so the marker, and the date under it, stay readable. */
-.c.red.booked,.c.red.worked,.c.red.run{background:var(--red-soft);color:var(--red-ink)}
-.c.local.booked,.c.local.worked,.c.local.run{background:var(--local-soft);color:var(--local-ink)}
+/* A red or local day wears its markers badly at full strength: the booked ring and the
+   worked outline both sink into the fill. Drop the fill to a soft wash of the same hue so
+   the marker, and the date under it, stay readable. */
+.c.red.booked,.c.red.worked{background:var(--red-soft);color:var(--red-ink)}
+.c.local.booked,.c.local.worked{background:var(--local-soft);color:var(--local-ink)}
 .c.red.worked,.c.local.worked{box-shadow:inset 0 0 0 1.5px currentColor}
 .c.past.worked{opacity:.8}
 details.key{margin:-6px 0 16px}
@@ -739,8 +738,8 @@ SCRIPT = """<script>
     box.innerHTML = picks.map(function (p) {
       var span = p.run.from === p.run.to ? "just the day" : label(p.run.from) + " – " + label(p.run.to);
       var who = p.all ? "everyone free" : "school free, Alba busy";
-      return '<li><button class="pick" data-pick="' + p.d + '" data-from="' + p.run.from +
-        '" data-to="' + p.run.to + '"><span class="day">' + label(p.d, true) + '</span><span>' + span +
+      return '<li><button class="pick" data-pick="' + p.d +
+        '"><span class="day">' + label(p.d, true) + '</span><span>' + span +
         '</span><span class="len">' + plural(p.run.len, "day") + '</span><span class="why">' + who +
         (p.clash ? " · music class that evening" : "") + '</span></button></li>';
     }).join("");
@@ -753,7 +752,6 @@ SCRIPT = """<script>
       el.classList.toggle("worked", worked.has(d));
       el.classList.toggle("past", d < TODAY);
       el.classList.toggle("today", d === TODAY);
-      el.classList.remove("run");
     });
   }
 
@@ -876,10 +874,6 @@ SCRIPT = """<script>
       });
   }
   // ── Events ──
-  function highlight(btn, on) {
-    if (!btn) return;
-    for (var i = IDX[btn.dataset.from]; i <= IDX[btn.dataset.to]; i++) cells[DAYS[i]].classList.toggle("run", on);
-  }
   document.addEventListener("click", function (e) {
     var t = e.target.closest(".tab");
     if (t) { ui.tab = t.dataset.tab; saveUi(); render(); return; }
@@ -904,14 +898,6 @@ SCRIPT = """<script>
     i = (i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length;
     ui.tab = tabs[i].dataset.tab; saveUi(); render(); tabs[i].focus();
   });
-  var best = document.getElementById("best");
-  ["mouseover", "focusin"].forEach(function (ev) {
-    best.addEventListener(ev, function (e) { highlight(e.target.closest(".pick"), true); });
-  });
-  ["mouseout", "focusout"].forEach(function (ev) {
-    best.addEventListener(ev, function (e) { highlight(e.target.closest(".pick"), false); });
-  });
-
   render();
 })();
 </script>"""
