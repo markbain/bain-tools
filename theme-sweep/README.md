@@ -48,6 +48,16 @@ and each bundled image's licence.
 
 A sweep that finds nothing is not a pass.
 
+## The review template
+
+`review-template.md` is the house format the reports feed into: the rules that
+decide how deep a review goes and which Trac status it closes at, the shape of the
+internal notes, and the Trac comment skeletons. It is symlinked into the review
+project's `reviews/` folder, so edit it here and the working copy follows.
+
+The sweep is the mechanical half; the template is the judgement half. Neither is
+much use without the other.
+
 ## Requirements
 
 A DDEV WordPress project with the theme unit test data imported, and the `theme-check`
