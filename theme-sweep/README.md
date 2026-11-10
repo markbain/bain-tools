@@ -93,8 +93,12 @@ attachment and sets a theme mod. It removes both afterwards, including on failur
 
 ## Licence checks
 
-The Pexels note in the report reflects the current site, not the handbook's wording.
-The handbook tells you to click a "free to use" link that Pexels has since renamed.
-The photo page now shows "Free" next to a "License" heading; follow it.
-`/creative-commons-images/` is CC0 and usable, `/license/` is the Pexels License and
-is not. Only CC0, CC BY 4.0 and CC-BY-SA 4.0 are accepted for images.
+The handbook's Pexels entry was corrected on or before 2026-11-10 and now matches what
+the site does, so the report and the handbook agree. It reads: only photos under the
+CC0 licence, not the Pexels License; on the photo page follow the "Free" link next to
+"License". The destination is what decides - `/creative-commons-images/` is CC0 and
+usable, `/license/` (headline "Legal Simplicity") is the Pexels License and is not.
+Only CC0, CC BY 4.0 and CC-BY-SA 4.0 are accepted for images.
+
+Until then the handbook told you to click a "free to use" link that Pexels had renamed,
+which is the wording a KopaNews 1.0.1 review turned up and reported to the Themes team.

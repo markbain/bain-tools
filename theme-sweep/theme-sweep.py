@@ -195,8 +195,27 @@ def prefix_report(theme_dir, header):
     Inline <script> blocks are stripped first: a JS `function foo()` sitting in a
     PHP file is not in the PHP public namespace and must not be reported as one.
     """
-    slug_bits = {b for b in re.split(r"[-_]",
-                 (header.get("text domain") or theme_dir.name).lower()) if b}
+    slug_parts = [b for b in re.split(r"[-_]",
+                  (header.get("text domain") or theme_dir.name).lower()) if b]
+    # A one- or two-letter slug segment matches almost any function name, so the
+    # off-slug test uses the substantial segments where there are any.
+    slug_bits = {b for b in slug_parts if len(b) >= 3} or set(slug_parts)
+
+    def read_prefix(name):
+        """The prefix a reviewer reads off the name.
+
+        Normally the first underscore segment. When the name opens with the
+        theme slug's own segments, the prefix is that whole run instead: the
+        slug n-blog-and-portfolio gives n_blog_and_portfolio_header(), whose
+        prefix is n_blog_and_portfolio, not n.
+        """
+        parts = name.lower().split("_")
+        matched = 0
+        while (matched < len(slug_parts) and matched < len(parts) - 1
+               and parts[matched] == slug_parts[matched]):
+            matched += 1
+        return "_".join(parts[:matched]) if matched else parts[0]
+
     funcs = []
     for php in theme_dir.rglob("*.php"):
         text = SCRIPT_BLOCK.sub("", php.read_text(encoding="utf-8", errors="replace"))
@@ -204,8 +223,8 @@ def prefix_report(theme_dir, header):
             funcs.append((m.group(1), str(php.relative_to(theme_dir))))
     unprefixed, offslug = [], []
     for name, where in funcs:
-        prefix = name.split("_")[0].lower()
-        if "_" not in name or len(prefix) < 4:
+        prefix = read_prefix(name)
+        if "_" not in name or len(prefix.replace("_", "")) < 4:
             unprefixed.append((name, where))
         elif not any(b in name.lower() for b in slug_bits):
             offslug.append((name, where))
