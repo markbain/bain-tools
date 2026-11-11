@@ -20,6 +20,7 @@ Run it from the DDEV theme-review project root, or pass --project.
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -680,8 +681,8 @@ def cmd_check(project, slug):
             "- Every bundled image's licence, one at a time.",
             ""]
 
-    reports = project / "reviews"
-    reports.mkdir(exist_ok=True)
+    reports = Path(os.environ.get("THEME_REVIEW_REPORTS") or (project / "reviews"))
+    reports.mkdir(parents=True, exist_ok=True)
     path = reports / f"{slug}-{version}-sweep.md"
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
     print(f"written {path}")
