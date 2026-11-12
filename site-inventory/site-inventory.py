@@ -21,6 +21,7 @@ session; --format csv gives one row per page for joining traffic data to.
 
 import argparse
 import csv
+import html
 import io
 import json
 import shlex
@@ -158,7 +159,7 @@ def from_wp(path, post_types, statuses, want_templates, wp_cmd):
         for row in json.loads(out.stdout or "[]"):
             pages.append(Page(
                 pid=int(row["ID"]),
-                title=row["post_title"] or row["post_name"],
+                title=html.unescape(row["post_title"] or row["post_name"]),
                 path=path_of(row.get("url") or "/" + row["post_name"] + "/"),
                 parent=int(row["post_parent"]) or None,
                 status=row["post_status"],
@@ -205,7 +206,8 @@ def from_rest(base, post_types, statuses):
                     continue
                 pages.append(Page(
                     pid=int(row["id"]),
-                    title=(row.get("title") or {}).get("rendered") or row["slug"],
+                    title=html.unescape(
+                        (row.get("title") or {}).get("rendered") or row["slug"]),
                     path=path_of(row.get("link") or "/" + row["slug"] + "/"),
                     parent=int(row.get("parent") or 0) or None,
                     template=row.get("template") or "",
