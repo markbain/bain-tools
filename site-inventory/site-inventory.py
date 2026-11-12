@@ -94,6 +94,8 @@ class Page(object):
         self.source = source
         self.children = []
         self.depth = 0
+        self.kind = "page"
+        self.menus = []        # [(menu name, depth in that menu, parent label)]
 
 
 def tree_from_parents(pages):
@@ -380,6 +382,20 @@ def menu_name(menu_id):
     return name.replace("-", " ").strip().title() or "Menu"
 
 
+def normalise_href(href, site):
+    """Same-host absolute URLs become paths; everything else is left alone."""
+    if href.startswith(("http://", "https://")):
+        host = urlparse(site).netloc
+        parts = urlparse(href)
+        if host and parts.netloc != host:
+            return href
+        tail = parts.path or "/"
+        if parts.query:
+            return tail + "?" + parts.query
+        return path_of(tail)
+    return href
+
+
 def menus_from_html(url):
     body = read_source(url)
     try:
@@ -399,7 +415,8 @@ def menus_from_html(url):
                         urlparse(i[2]).netloc != host for i in items):
             continue   # a list of outbound links, not navigation
         seen.add(key)
-        out.append((menu_name(mid), items))
+        out.append((menu_name(mid),
+                    [(d, l, normalise_href(h, url)) for d, l, h in items]))
     return out
 
 
@@ -431,10 +448,115 @@ def menus_from_wp(path, wp_cmd):
             up = by_id.get(parent)
             return 0 if up is None else depth_of(up, guard + 1) + 1
 
-        items = [(depth_of(x), x.get("title") or "", x.get("url") or "")
+        items = [(depth_of(x), x.get("title") or "",
+                  normalise_href(x.get("url") or "", x.get("url") or ""))
                  for x in rows]
         out.append((menu.get("name") or menu_name(str(slug)), items))
     return out
+
+
+BODY_CLASS = re.compile(r'<body[^>]*class="([^"]*)"', re.I)
+
+
+def classify(url):
+    """What kind of thing renders at a URL.
+
+    A menu points at destinations, not at post types. A taxonomy archive is
+    not a page to WordPress and is entirely a page to the client, who put it
+    in the menu. So the inventory names what renders rather than leaving the
+    destination out.
+    """
+    try:
+        body, _ = fetch(url)
+    except (urllib.error.URLError, urllib.error.HTTPError, ValueError):
+        return "unreachable"
+    try:
+        text = body.decode("utf-8", "replace")
+    except Exception:
+        return "unknown"
+    m = BODY_CLASS.search(text)
+    classes = (m.group(1) if m else "").split()
+
+    if any(c.startswith("search") for c in classes):
+        return "search"
+    for c in classes:
+        if c.startswith("tax-"):
+            return "taxonomy archive"
+        if c.startswith("term-"):
+            return "taxonomy archive"
+    if "category" in classes or any(c.startswith("category-") for c in classes):
+        return "category archive"
+    if "archive" in classes:
+        return "archive"
+    for c in classes:
+        if c.startswith("single-") and c != "single-format-standard":
+            return c.replace("single-", "") + " entry"
+    if "single" in classes:
+        return "post"
+    if "page" in classes or any(c.startswith("page-id-") for c in classes):
+        return "page"
+    if "home" in classes or "blog" in classes:
+        return "posts archive"
+    return "unknown"
+
+
+def add_menu_destinations(pages, menus, site, probe=True):
+    """Menu targets the page query never saw, added as destinations.
+
+    Placed under the deepest page whose path is a prefix of theirs, which is
+    where a visitor would put them.
+    """
+    known = {p.path for p in pages}
+    by_path = {p.path: p for p in pages}
+    added = []
+    next_id = max([p.id for p in pages] or [0]) + 1
+
+    for _, items in menus:
+        for _depth, label, href in items:
+            if not href.startswith("/"):
+                continue
+            path = path_of(href) if "?" not in href else href
+            if path in known:
+                continue
+            known.add(path)
+            kind = classify(urljoin(site, href)) if (probe and site) else "not a page"
+            parent = None
+            seg = [x for x in path.strip("/").split("/") if x]
+            while len(seg) > 1:
+                seg = seg[:-1]
+                cand = "/" + "/".join(seg) + "/"
+                if cand in by_path:
+                    parent = by_path[cand]
+                    break
+            node = Page(pid=next_id, title=label, path=path,
+                        parent=parent.id if parent else None,
+                        template="", status="menu", source=kind)
+            node.kind = kind
+            next_id += 1
+            pages.append(node)
+            by_path[path] = node
+            added.append(node)
+    return added
+
+
+def tag_menu_membership(pages, menus):
+    """Record, on each destination, which menus hold it and where.
+
+    The inventory is the flat list. The page tree and the menus are two views
+    over it, and a destination can sit at a different depth in each.
+    """
+    by_path = {p.path: p for p in pages}
+    for name, items in menus:
+        stack = []
+        for depth, label, href in items:
+            while stack and stack[-1][0] >= depth:
+                stack.pop()
+            parent_label = stack[-1][1] if stack else ""
+            stack.append((depth, label))
+            target = by_path.get(href) or by_path.get(path_of(href)
+                                                      if href.startswith("/") else href)
+            if target is not None:
+                target.menus.append((name, depth, parent_label, label))
 
 
 def render_navigation(menus, site=""):
@@ -465,6 +587,8 @@ def render_markdown(rows, title, trusted_parents, status_tag):
         bits = ["%s- %s `%s`" % ("  " * p.depth, p.title, p.path)]
         if p.template:
             bits.append("{%s}" % p.template)
+        elif p.kind != "page":
+            bits.append("{%s}" % p.kind)
         if status_tag:
             bits.append("[%s]" % status_tag)
         out.write(" ".join(bits) + "\n")
@@ -474,15 +598,28 @@ def render_markdown(rows, title, trusted_parents, status_tag):
     return out.getvalue()
 
 
-def render_csv(rows):
+def render_csv(rows, by_id=None):
+    """One row per destination. The inventory itself: structure and navigation
+    are both views over this, so each row carries its place in each."""
+    by_id = by_id or {}
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["path", "title", "depth", "template", "status", "modified",
-                "type", "sessions_12mo", "entrances_12mo", "impressions_12mo",
+    w.writerow(["path", "title", "kind", "template", "status", "modified",
+                "tree_depth", "tree_parent", "in_menus", "menu_depth",
+                "menu_parent", "menu_label",
+                "sessions_12mo", "entrances_12mo", "impressions_12mo",
                 "clicks_12mo", "disposition", "reason"])
     for p in rows:
-        w.writerow([p.path, p.title, p.depth, p.template, p.status, p.modified,
-                    p.source, "", "", "", "", "", ""])
+        parent = by_id.get(p.parent)
+        first = p.menus[0] if p.menus else None
+        w.writerow([
+            p.path, p.title, p.kind, p.template, p.status, p.modified,
+            p.depth, parent.path if parent else "",
+            "; ".join(sorted({m[0] for m in p.menus})),
+            first[1] if first else "",
+            first[2] if first else "",
+            first[3] if first else "",
+            "", "", "", "", "", ""])
     return out.getvalue()
 
 
@@ -490,7 +627,9 @@ def render_json(rows):
     return json.dumps([{
         "path": p.path, "title": p.title, "depth": p.depth,
         "template": p.template, "status": p.status, "modified": p.modified,
-        "type": p.source,
+        "kind": p.kind,
+        "menus": [{"menu": m[0], "depth": m[1], "parent": m[2], "label": m[3]}
+                  for m in p.menus],
     } for p in rows], indent=2) + "\n"
 
 
@@ -524,6 +663,11 @@ def main():
     ap.add_argument("--menus-from", metavar="URL",
                     help="page to read the rendered menus from (default: the "
                          "site root). Footer menus sometimes only appear deeper.")
+    ap.add_argument("--no-destinations", action="store_true",
+                    help="do not add menu targets that are not pages. They are "
+                         "added by default: a taxonomy archive in the menu is "
+                         "not a page to WordPress and is entirely a page to the "
+                         "client, who put it there.")
     ap.add_argument("--status", default="keep", metavar="TAG",
                     help="status tag on every line, or '' for none (default: keep)")
     ap.add_argument("--title", default="", help="document title for the Markdown output")
@@ -549,9 +693,6 @@ def main():
     if not pages:
         die("no pages found")
 
-    roots = tree_from_parents(pages) if trusted else tree_from_paths(pages)
-    rows = order(roots)
-
     menus = []
     if args.menus:
         if args.wp:
@@ -562,17 +703,27 @@ def main():
                 die("--menus needs --url or --menus-from, or --wp")
             try:
                 menus = menus_from_html(src)
-            except (urllib.error.URLError, urllib.error.HTTPError) as e:
+            except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
                 die("could not read %s (%s)" % (src, e))
         if not menus:
             warn("no menus found")
+        elif not args.no_destinations:
+            extra = add_menu_destinations(pages, menus, args.url or "",
+                                          probe=bool(args.url))
+            if extra:
+                warn("%d menu destinations added that the page query did not "
+                     "see" % len(extra))
+        tag_menu_membership(pages, menus)
+
+    roots = tree_from_parents(pages) if trusted else tree_from_paths(pages)
+    rows = order(roots)
 
     if args.format == "markdown":
         text = render_markdown(rows, args.title, trusted, args.status.strip())
         if menus:
             text += render_navigation(menus, args.url or "")
     elif args.format == "csv":
-        text = render_csv(rows)
+        text = render_csv(rows, {p.id: p for p in pages})
     else:
         text = render_json(rows)
 

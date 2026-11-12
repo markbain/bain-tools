@@ -1,7 +1,16 @@
 # site-inventory
 
-Lists every page of a site, with its parentage, as the starting document for an
-information architecture review. Stage 1 of the IA workflow: facts, not judgement.
+Lists every destination on a site as the starting document for an information architecture
+review. Stage 1 of the IA workflow: facts, not judgement.
+
+**The inventory is a flat list; structure and navigation are views over it.** One row per
+destination, each carrying where it sits in the page tree *and* where it sits in each menu.
+Those two disagree often, and making either one the spine of the inventory hides that.
+
+**A destination is anything the site goes to**, not only a WordPress page. A taxonomy archive
+is not a page to WordPress and is entirely a page to the client, who put it in the menu. So a
+menu target the page query never saw is added to the inventory, classified by what actually
+renders at it, rather than reported as an anomaly.
 
 Take the inventory from **production**. Only the live site has an accurate structure: a
 local copy is a snapshot of whenever it was pulled, and clients add, rename and delete pages
@@ -79,11 +88,20 @@ appear deeper in a site. It accepts a local HTML file too.
   - The team `/workshop/team/` [keep]
 ```
 
-`--format csv` is one row per page, with empty columns for the traffic join that
-comes next: `sessions_12mo`, `entrances_12mo`, `impressions_12mo`, `clicks_12mo`,
-`disposition`, `reason`. Fill those from GA4 and Search Console, decide a
-disposition per row, and the statuses in the Markdown follow from the evidence
-rather than from opinion.
+`--format csv` is the inventory proper: one row per destination, carrying both views and the
+empty columns for the traffic join.
+
+| Column | Holds |
+|---|---|
+| `path`, `title`, `kind` | What it is. `kind` is page, taxonomy archive, search, post, archive |
+| `template`, `status`, `modified` | What WordPress knows about it |
+| `tree_depth`, `tree_parent` | Where it sits in the page tree |
+| `in_menus`, `menu_depth`, `menu_parent`, `menu_label` | Where it sits in the navigation, and what it is called there |
+| `sessions_12mo`, `entrances_12mo`, `impressions_12mo`, `clicks_12mo` | Empty. The stage 2 join |
+| `disposition`, `reason` | Empty. The stage 3 decision |
+
+A row with `tree_depth` 0 and `menu_depth` 1 is a top-level page the menu presents as a
+child. That is not an error in either place; it is the finding.
 
 `--format json` is the same data for anything else that needs it.
 
