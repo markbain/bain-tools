@@ -3,13 +3,17 @@
 Lists every page of a site, with its parentage, as the starting document for an
 information architecture review. Stage 1 of the IA workflow: facts, not judgement.
 
+Take the inventory from **production**. Only the live site has an accurate structure: a
+local copy is a snapshot of whenever it was pulled, and clients add, rename and delete pages
+without telling anyone. An IA review built on a stale tree looks authoritative and is wrong.
+
 ## Sources
 
 Three, in order of how much they can be trusted:
 
 | Flag | Source | Parentage |
 |---|---|---|
-| `--wp PATH` | WP-CLI against an install | True, from `post_parent` |
+| `--wp PATH` | WP-CLI against an install, production over SSH for preference | True, from `post_parent` |
 | `--url URL` | `/wp-json/wp/v2/`, falling back to the sitemap | True, while the REST API answers |
 | `--sitemap SRC` | An XML sitemap, by URL or local file | **Inferred from path depth. A guess.** |
 
@@ -20,18 +24,18 @@ checked the tree.
 ## Use
 
 ```bash
-# A local install
-site-inventory.py --wp /path/to/public_html --title "Example Site"
+# Production, no shell access. The usual case.
+site-inventory.py --url https://example.test/ --title "Example Site"
 
-# Behind DDEV, Vagrant or SSH
-site-inventory.py --wp . --wp-cmd "ddev wp"
-site-inventory.py --wp . --wp-cmd "vagrant ssh -- wp"
-
-# Live site, no shell access
-site-inventory.py --url https://example.test/
+# Production over SSH, when the REST API is closed
+site-inventory.py --wp . --wp-cmd "wp ssh --host=prod"
 
 # A sitemap you already have
 site-inventory.py --sitemap ./sitemap.xml
+
+# A local install. Fine for testing the tool, wrong for an IA review:
+# a local copy drifts from the live structure.
+site-inventory.py --wp . --wp-cmd "ddev wp"
 ```
 
 Useful flags: `--post-types page,post`, `--include-drafts`, `--templates`

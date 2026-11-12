@@ -2,6 +2,9 @@
 """site-inventory - list every page of a site, with its parentage, as the
 starting document for an information architecture review.
 
+Run it against PRODUCTION. Only the live site has an accurate structure; a
+local copy is a snapshot of whenever it was pulled, and clients edit live.
+
 Three sources, in order of how much they can be trusted:
 
   --wp PATH       WP-CLI against a local install. True parentage from
