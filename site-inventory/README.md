@@ -76,6 +76,25 @@ believes the structure is, whatever `post_parent` says.
 `--menus-from URL` reads the menus from a different page, since footer menus sometimes only
 appear deeper in a site. It accepts a local HTML file too.
 
+## Content audit
+
+`--content` fetches every destination and records what it is made of: HTTP status, word
+count, the H1 and how many there are, the title tag, meta description length, images and how
+many lack alt text, and how many internal links point at it. Four workers, so a 90
+destination site takes a couple of minutes.
+
+This is the **scriptable half** of a content audit. The other half, what is *missing*, cannot
+be read off the site at all: a site audit tells you what is weak, never what is absent. Gaps
+come from the client's goals and audiences, the journeys the site must support, Search
+Console queries with demand and no page to answer them, and competitor sites.
+
+Two cautions when reading `words`. It excludes `script`, `style`, `nav`, `header`, `footer`
+and `aside`, but a theme that builds its furniture out of plain divs still gets counted, so
+look for the **floor**: if thirty pages all land within a few words of each other, that
+number is the template and those pages are empty. And `links_in` counts links found in the
+crawled set only, so a page linked only from a post, a widget or a PDF reads as an orphan
+here.
+
 ## Output
 
 `--format markdown` (default) is the nested list an IA session starts from:

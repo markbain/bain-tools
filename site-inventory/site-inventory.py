@@ -23,6 +23,7 @@ import argparse
 import csv
 import html
 import io
+import collections
 import json
 import re
 import shlex
@@ -31,6 +32,7 @@ import sys
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
@@ -95,6 +97,18 @@ class Page(object):
         self.children = []
         self.depth = 0
         self.kind = "page"
+        self.http_status = ""
+        self.title_tag = ""
+        self.h1 = ""
+        self.h1_count = ""
+        self.meta_description = ""
+        self.words = ""
+        self.images = ""
+        self.images_no_alt = ""
+        self.noindex = ""
+        self.canonical = ""
+        self.links_in = ""
+        self.links_out_n = ""
         self.menus = []        # [(menu name, depth in that menu, parent label)]
 
 
@@ -576,6 +590,141 @@ def render_navigation(menus, site=""):
         buf.append("")
     return "\n".join(buf)
 
+
+# ----------------------------------------------------------- content audit
+#
+# Traffic says what gets visited. It does not say whether what is there is any
+# good. This is the scriptable half of the content audit: what each
+# destination is made of, and which ones nothing links to. The other half -
+# what is MISSING - cannot be read off the site at all, and comes from the
+# client's goals, the journeys the site must support, Search Console demand
+# and competitor sites.
+
+
+class ContentParser(HTMLParser):
+    """What a rendered page is made of."""
+
+    SKIP = ("script", "style", "nav", "header", "footer", "aside", "noscript",
+            "template", "svg")
+
+    def __init__(self):
+        HTMLParser.__init__(self)
+        self.title = ""
+        self.h1s = []
+        self.meta_description = ""
+        self.robots = ""
+        self.canonical = ""
+        self.images = 0
+        self.images_no_alt = 0
+        self.links = []
+        self.words = 0
+        self._skip = 0
+        self._in_title = False
+        self._in_h1 = False
+        self._h1 = []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag in self.SKIP:
+            self._skip += 1
+            return
+        if tag == "title":
+            self._in_title = True
+        elif tag == "h1":
+            self._in_h1 = True
+            self._h1 = []
+        elif tag == "img":
+            self.images += 1
+            if not (a.get("alt") or "").strip():
+                self.images_no_alt += 1
+        elif tag == "a" and a.get("href"):
+            self.links.append(a["href"])
+        elif tag == "meta":
+            name = (a.get("name") or "").lower()
+            if name == "description":
+                self.meta_description = a.get("content") or ""
+            elif name == "robots":
+                self.robots = (a.get("content") or "").lower()
+        elif tag == "link" and (a.get("rel") or "").lower() == "canonical":
+            self.canonical = a.get("href") or ""
+
+    def handle_endtag(self, tag):
+        if tag in self.SKIP:
+            self._skip = max(0, self._skip - 1)
+        elif tag == "title":
+            self._in_title = False
+        elif tag == "h1":
+            self._in_h1 = False
+            text = " ".join("".join(self._h1).split())
+            if text:
+                self.h1s.append(text)
+
+    def handle_data(self, data):
+        if self._in_title:
+            self.title += data
+        if self._in_h1:
+            self._h1.append(data)
+        if not self._skip:
+            self.words += len(data.split())
+
+
+def audit_one(page, site):
+    url = urljoin(site, page.path) if site else page.path
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            body = r.read()
+            page.http_status = r.status
+    except urllib.error.HTTPError as e:
+        page.http_status = e.code
+        return page
+    except Exception:
+        page.http_status = 0
+        return page
+
+    cp = ContentParser()
+    try:
+        cp.feed(body.decode("utf-8", "replace"))
+    except Exception:
+        pass
+
+    host = urlparse(site).netloc if site else ""
+    page.title_tag = " ".join(cp.title.split())
+    page.h1 = cp.h1s[0] if cp.h1s else ""
+    page.h1_count = len(cp.h1s)
+    page.meta_description = " ".join(cp.meta_description.split())
+    page.words = cp.words
+    page.images = cp.images
+    page.images_no_alt = cp.images_no_alt
+    page.noindex = "noindex" in cp.robots
+    page.canonical = cp.canonical
+    page.links_out = set()
+    for href in cp.links:
+        if href.startswith("#") or href.startswith(("mailto:", "tel:")):
+            continue
+        if href.startswith(("http://", "https://")):
+            if host and urlparse(href).netloc != host:
+                continue
+        page.links_out.add(path_of(urlparse(href).path or "/"))
+    return page
+
+
+def audit_content(pages, site, workers=4):
+    """Fetch every destination and record what it is made of."""
+    warn("auditing %d destinations" % len(pages))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(lambda pg: audit_one(pg, site), pages))
+
+    inbound = collections.Counter()
+    known = {p.path for p in pages}
+    for p in pages:
+        for target in getattr(p, "links_out", ()):  # self links do not count
+            if target in known and target != p.path:
+                inbound[target] += 1
+    for p in pages:
+        p.links_in = inbound.get(p.path, 0)
+        p.links_out_n = len([t for t in getattr(p, "links_out", ()) if t in known])
+
 # ----------------------------------------------------------------- output
 
 def render_markdown(rows, title, trusted_parents, status_tag):
@@ -607,6 +756,9 @@ def render_csv(rows, by_id=None):
     w.writerow(["path", "title", "kind", "template", "status", "modified",
                 "tree_depth", "tree_parent", "in_menus", "menu_depth",
                 "menu_parent", "menu_label",
+                "http", "words", "h1", "h1_count", "title_tag",
+                "meta_description_len", "images", "images_no_alt",
+                "links_in", "links_out", "noindex",
                 "sessions_12mo", "entrances_12mo", "impressions_12mo",
                 "clicks_12mo", "disposition", "reason"])
     for p in rows:
@@ -619,6 +771,10 @@ def render_csv(rows, by_id=None):
             first[1] if first else "",
             first[2] if first else "",
             first[3] if first else "",
+            p.http_status, p.words, p.h1, p.h1_count, p.title_tag,
+            len(p.meta_description) if p.meta_description else "",
+            p.images, p.images_no_alt, p.links_in, p.links_out_n,
+            "yes" if p.noindex else "",
             "", "", "", "", "", ""])
     return out.getvalue()
 
@@ -668,6 +824,11 @@ def main():
                          "added by default: a taxonomy archive in the menu is "
                          "not a page to WordPress and is entirely a page to the "
                          "client, who put it there.")
+    ap.add_argument("--content", action="store_true",
+                    help="fetch every destination and record what it is made of: "
+                         "word count, H1, meta description, images without alt, "
+                         "and how many internal links point at it. The "
+                         "scriptable half of a content audit.")
     ap.add_argument("--status", default="keep", metavar="TAG",
                     help="status tag on every line, or '' for none (default: keep)")
     ap.add_argument("--title", default="", help="document title for the Markdown output")
@@ -714,6 +875,11 @@ def main():
                 warn("%d menu destinations added that the page query did not "
                      "see" % len(extra))
         tag_menu_membership(pages, menus)
+
+    if args.content:
+        if not args.url:
+            die("--content needs --url")
+        audit_content(pages, args.url)
 
     roots = tree_from_parents(pages) if trusted else tree_from_paths(pages)
     rows = order(roots)
