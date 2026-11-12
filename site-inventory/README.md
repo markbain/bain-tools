@@ -42,6 +42,31 @@ Useful flags: `--post-types page,post`, `--include-drafts`, `--templates`
 (one WP-CLI call per page, so it is off by default), `--status ''` to leave the
 `[keep]` tag off every line, `-o FILE`.
 
+## Navigation
+
+`--menus` also reads the site's navigation. A menu is **not** the page tree: WordPress menu
+items carry their own `_menu_item_menu_item_parent`, so a menu can nest two pages that have
+no parent-child relationship, and can leave out pages that do. The two are separate facts and
+the tool keeps them in separate sections.
+
+The REST menu endpoints need an authenticated user with `edit_theme_options`, so they answer
+401 on a site you are only visiting. That leaves two routes:
+
+- **The rendered front end** (default). Any list of links inside `<nav>`, `<header>` or
+  `<footer>` counts, whatever its classes, because plenty of sites do not use `wp_nav_menu`
+  at all: a mega-menu plugin, a page builder or hand written markup produce navigation with
+  no `menu-` id on it. Duplicate renderings of one menu, mobile and desktop, are collapsed.
+- **`wp menu list`** when the source is `--wp`. Authoritative, and it sees menus that are
+  registered but not displayed.
+
+Prefer the front end. It is the structure the client and their visitors actually experience,
+and the database is what the site is made of. **Where the two disagree, that disagreement is
+the finding** — a menu nesting four top-level pages under About Us tells you what the client
+believes the structure is, whatever `post_parent` says.
+
+`--menus-from URL` reads the menus from a different page, since footer menus sometimes only
+appear deeper in a site. It accepts a local HTML file too.
+
 ## Output
 
 `--format markdown` (default) is the nested list an IA session starts from:

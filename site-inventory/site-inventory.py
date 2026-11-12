@@ -24,12 +24,14 @@ import csv
 import html
 import io
 import json
+import re
 import shlex
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 UA = "site-inventory/1.0"
@@ -265,6 +267,193 @@ def from_sitemap(src):
     return pages, False
 
 
+
+# -------------------------------------------------------------- navigation
+#
+# A menu is not the page tree. WordPress menu items carry their own
+# _menu_item_menu_item_parent, so a menu can nest two pages that have no
+# parent-child relationship at all, and can leave out pages that do. The two
+# have to be read separately or the IA is built on a guess.
+#
+# The REST menu endpoints (/wp/v2/menus, /wp/v2/menu-items) need an
+# authenticated user with edit_theme_options, so they answer 401 on a site you
+# are only visiting. That leaves the rendered HTML, which has the advantage of
+# being what a visitor actually sees, and wp-cli, which is authoritative.
+
+
+class MenuScraper(HTMLParser):
+    """Pulls navigation out of a rendered page, by what it looks like rather
+    than by what built it.
+
+    WordPress's own wp_nav_menu gives each menu a <ul id="menu-{slug}">, but
+    plenty of sites do not use it: a mega-menu plugin, a page builder or hand
+    written markup will all produce navigation with no such id. So any list of
+    links inside <nav>, <header> or <footer> counts, whatever its classes.
+
+    This reads the front end deliberately. The front end is the structure the
+    client and their visitors actually experience; the database is what the
+    site is made of. Where the two disagree, that disagreement is the finding.
+    """
+
+    LANDMARKS = ("nav", "header", "footer")
+
+    def __init__(self):
+        HTMLParser.__init__(self)
+        self.menus = []          # [(name, [(depth, label, href), ...])]
+        self.landmarks = []      # open <nav>/<header>/<footer> descriptors
+        self.menu_name_hint = None
+        self.items = []
+        self.ul_depth = None     # None when not inside a captured list
+        self.in_a = False
+        self.label = []
+        self.pending = None
+
+    # -- helpers
+
+    @staticmethod
+    def _describe(tag, a):
+        bits = a.get("id") or ""
+        if not bits:
+            cls = (a.get("class") or "").split()
+            bits = cls[0] if cls else ""
+        return (bits or tag)
+
+    def _is_menu_list(self, a):
+        mid = a.get("id") or ""
+        cls = (a.get("class") or "").split()
+        return mid.startswith("menu-") or any("menu" in c for c in cls) \
+            or any("nav" in c for c in cls)
+
+    # -- parsing
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag in self.LANDMARKS:
+            self.landmarks.append(self._describe(tag, a))
+            return
+
+        if tag == "ul":
+            if self.ul_depth is None:
+                if self._is_menu_list(a) or self.landmarks:
+                    self.menu_name_hint = (a.get("id") or "").strip() \
+                        or (self.landmarks[-1] if self.landmarks else "") \
+                        or (a.get("class") or "")
+                    self.items = []
+                    self.ul_depth = 0
+            else:
+                self.ul_depth += 1
+
+        elif tag == "a" and self.ul_depth is not None:
+            self.in_a = True
+            self.label = []
+            self.pending = (self.ul_depth, a.get("href") or "")
+
+    def handle_data(self, data):
+        if self.in_a:
+            self.label.append(data)
+
+    def handle_endtag(self, tag):
+        if tag in self.LANDMARKS:
+            if self.landmarks:
+                self.landmarks.pop()
+            return
+
+        if tag == "a" and self.in_a:
+            self.in_a = False
+            depth, href = self.pending
+            label = " ".join("".join(self.label).split())
+            if label and href and not href.startswith("#"):
+                self.items.append((depth, label, href))
+
+        elif tag == "ul" and self.ul_depth is not None:
+            if self.ul_depth == 0:
+                if self.items:
+                    self.menus.append((self.menu_name_hint, self.items))
+                self.items, self.ul_depth, self.menu_name_hint = [], None, None
+            else:
+                self.ul_depth -= 1
+
+
+def menu_name(menu_id):
+    name = re.sub(r"^(menu-|nav-|main-)", "", menu_id or "menu")
+    name = re.sub(r"-\d+$", "", name)
+    return name.replace("-", " ").strip().title() or "Menu"
+
+
+def menus_from_html(url):
+    body = read_source(url)
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        text = body.decode("latin-1")
+    sc = MenuScraper()
+    sc.feed(text)
+
+    out, seen = [], set()
+    for mid, items in sc.menus:
+        key = tuple(sorted(set(i[2] for i in items)))
+        if key in seen or len(items) < 2:
+            continue   # the same menu rendered twice, mobile and desktop
+        host = urlparse(url).netloc
+        if host and all(i[2].startswith(("http://", "https://")) and
+                        urlparse(i[2]).netloc != host for i in items):
+            continue   # a list of outbound links, not navigation
+        seen.add(key)
+        out.append((menu_name(mid), items))
+    return out
+
+
+def menus_from_wp(path, wp_cmd):
+    base = shlex.split(wp_cmd)
+    path_arg = [] if path in (".", "") else ["--path=" + path]
+
+    r = subprocess.run(base + ["menu", "list", "--format=json"] + path_arg,
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        die("wp menu list failed:\n%s" % r.stderr.strip())
+
+    out = []
+    for menu in json.loads(r.stdout or "[]"):
+        slug = menu.get("slug") or menu.get("term_id")
+        ri = subprocess.run(base + ["menu", "item", "list", str(slug),
+                                    "--format=json"] + path_arg,
+                            capture_output=True, text=True)
+        if ri.returncode != 0:
+            warn("could not list items for menu %s" % slug)
+            continue
+        rows = json.loads(ri.stdout or "[]")
+        by_id = {str(x.get("db_id")): x for x in rows}
+
+        def depth_of(row, guard=0):
+            parent = str(row.get("menu_item_parent") or "0")
+            if parent in ("0", "", "None") or guard > 10:
+                return 0
+            up = by_id.get(parent)
+            return 0 if up is None else depth_of(up, guard + 1) + 1
+
+        items = [(depth_of(x), x.get("title") or "", x.get("url") or "")
+                 for x in rows]
+        out.append((menu.get("name") or menu_name(str(slug)), items))
+    return out
+
+
+def render_navigation(menus, site=""):
+    """The ## Navigation half of the IA source document."""
+    if not menus:
+        return ""
+    host = urlparse(site).netloc if site else ""
+    buf = ["", "## Navigation", ""]
+    for name, items in menus:
+        buf.append("### %s" % name)
+        for depth, label, href in items:
+            target = href
+            if href.startswith("http"):
+                parts = urlparse(href)
+                target = path_of(href) if (not host or parts.netloc == host) else href
+            buf.append("%s- %s -> `%s`" % ("  " * depth, label, target))
+        buf.append("")
+    return "\n".join(buf)
+
 # ----------------------------------------------------------------- output
 
 def render_markdown(rows, title, trusted_parents, status_tag):
@@ -328,6 +517,13 @@ def main():
                     help="also list draft and private pages")
     ap.add_argument("--templates", action="store_true",
                     help="look up each page template (--wp only, one call per page)")
+    ap.add_argument("--menus", action="store_true",
+                    help="also read the navigation menus. A menu nests items "
+                         "independently of the page tree, so this is a separate "
+                         "fact from the structure, not a view of it.")
+    ap.add_argument("--menus-from", metavar="URL",
+                    help="page to read the rendered menus from (default: the "
+                         "site root). Footer menus sometimes only appear deeper.")
     ap.add_argument("--status", default="keep", metavar="TAG",
                     help="status tag on every line, or '' for none (default: keep)")
     ap.add_argument("--title", default="", help="document title for the Markdown output")
@@ -356,8 +552,25 @@ def main():
     roots = tree_from_parents(pages) if trusted else tree_from_paths(pages)
     rows = order(roots)
 
+    menus = []
+    if args.menus:
+        if args.wp:
+            menus = menus_from_wp(args.wp, args.wp_cmd)
+        else:
+            src = args.menus_from or args.url or ""
+            if not src:
+                die("--menus needs --url or --menus-from, or --wp")
+            try:
+                menus = menus_from_html(src)
+            except (urllib.error.URLError, urllib.error.HTTPError) as e:
+                die("could not read %s (%s)" % (src, e))
+        if not menus:
+            warn("no menus found")
+
     if args.format == "markdown":
         text = render_markdown(rows, args.title, trusted, args.status.strip())
+        if menus:
+            text += render_navigation(menus, args.url or "")
     elif args.format == "csv":
         text = render_csv(rows)
     else:
