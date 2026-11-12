@@ -8,3 +8,4 @@ Small command-line tools by Mark Bain.
 |------|-------------|
 | [transcribe](transcribe/) | Transcribe audio files to markdown via OpenAI Whisper |
 | [holiday-planner](holiday-planner/) | Build the holiday planner page for a planning year |
+| [site-inventory](site-inventory/) | List every page of a site, with parentage, for an IA review |
