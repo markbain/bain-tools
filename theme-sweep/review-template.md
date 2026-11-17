@@ -34,6 +34,58 @@ unopened and all three dissolved on inspection: the TGMPA config was compliant
 and its plugin hosted on wordpress.org, `yourwebsite.com` was a form placeholder
 attribute, and the tags had evidence the block-shaped test could not see.
 
+**Nothing is approved until every line and every requirement has a verdict.**
+Not a grep list, not a pattern set: before approval is proposed, the whole of
+each non-vendored file has been read and every requirement on the handbook
+pages carries a recorded verdict. Greps catch what is already known to be worth
+catching, so they are a first pass over a file and never the review of it.
+
+This is the approval gate, not a change to the order of work. The tiers under
+"Order the checks by cost" stand: cheap checks first, two required items still
+end a pass, and a partial review still rejects on what it has found and says
+"+ possibly more issues". What it forbids is proposing approval off a pass that
+stopped early. By the time a theme is approved, everything the cheap tiers
+deferred has been gone back over and settled.
+
+**A verdict on everything is not a write-up of everything.** The gate above is
+internal: every requirement carries a verdict in the notes before approval is
+proposed. What reaches the ticket is the required items, plus whichever
+recommendations are worth the author's time. The handbook asks for no more: it
+defines a recommended item as one that does not affect the outcome of the
+review, has the reviewer check the required items while noting any
+recommendations, and says only that the review is added to the ticket, with
+extra information encouraged. It sets no content requirement for a comment.
+Checked on the handbook review page, 2026-11-15, which is the only authority on
+it, so it is one source and not corroborated.
+
+Fixyno is the counter-example: nine recommendations published across the 1.0.7
+and 1.0.8 rounds, none of which could change the outcome, in the same passes
+that missed three required items. Every recommendation published is a paragraph
+written, a reply read and a round-trip the author owes nothing on.
+
+What approval requires:
+
+- A file ledger in the notes: every file in the zip, with the line ranges read
+  and a verdict. Vendored code (TGMPA) and generated builds (`99_tw.css`) are
+  diffed against upstream or against the bundled source, and the ledger says
+  that is what was done rather than leaving them out.
+- A hook and function inventory: every `add_action`, `add_filter` and function
+  declaration in the theme, each with a one-line verdict. An entry in that
+  inventory is what surfaces a hook nobody thought to grep for.
+- The requirement list is built by reading the handbook pages at review time,
+  and every requirement gets a verdict, including the ones no code read can
+  settle. An item on "Still needs a human" without a recorded verdict is an
+  unreviewed item, not a note.
+
+Written 2026-11-15, after a key reviewer raised three items on Fixyno
+Appliance Repair 1.0.9 that were all in the 1.0.8 this review approved: a
+custom lazy-load content filter at `functions.php:1273-1404` and site-wide
+response headers at `:1430-1455`, both plugin territory or disallowed, and
+both unflagged across three passes. The lazy-load filter sits 58 lines below a
+function the 1.0.7 review dissected. The third item, the mobile menu's focus
+trap, sat on this template's own "Still needs a human" list through all three
+passes and never got a verdict.
+
 ## Where a handbook sentence is narrower than it reads
 
 Section 9 says "only one type of line ending is used", which reads theme-wide.
