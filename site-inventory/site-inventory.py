@@ -24,6 +24,7 @@ import csv
 import html
 import io
 import collections
+import fnmatch
 import json
 import re
 import shlex
@@ -110,6 +111,8 @@ class Page(object):
         self.links_in = ""
         self.links_out_n = ""
         self.menus = []        # [(menu name, depth in that menu, parent label)]
+        self.triage = ""       # "", "check" or "drop"
+        self.triage_reason = ""
 
 
 def tree_from_parents(pages):
@@ -265,21 +268,46 @@ def sitemap_urls(src, seen=None):
         for loc in locs:
             out.extend(sitemap_urls(loc, seen))
         return out
-    return locs
+    return [(loc, src) for loc in locs]
+
+
+# A sitemap's own name says what it lists: Yoast writes post_tag-sitemap.xml
+# and category-sitemap.xml, core writes wp-sitemap-taxonomies-*.xml and
+# wp-sitemap-users-*.xml. Their URLs are archives, whatever their paths.
+ARCHIVE_SITEMAP = re.compile(r"(taxonom|users|author|_tag|tag-|categor)", re.I)
 
 
 def from_sitemap(src):
     urls = sitemap_urls(src)
     if not urls:
         die("no URLs found in %s" % src)
+    # One fetch per sub-sitemap: what renders at its last URL is what the
+    # whole sitemap lists. Not the first: Yoast opens a post type's sitemap
+    # with the post type archive. Names alone miss custom taxonomies, which
+    # Yoast names after the taxonomy slug (age_range-sitemap.xml).
+    last = {}
+    for u, sm in urls:
+        last[sm] = u
+    sitemap_kind = {}
+    for sm, u in last.items():
+        if ARCHIVE_SITEMAP.search(sm.rsplit("/", 1)[-1]):
+            sitemap_kind[sm] = "archive"
+        elif u.startswith(("http://", "https://")):
+            kind = classify(u)
+            sitemap_kind[sm] = kind if kind in GENERATED_KINDS else ""
+        else:
+            sitemap_kind[sm] = ""
+
     pages, seen = [], set()
-    for i, u in enumerate(sorted(set(urls))):
+    for i, (u, sm) in enumerate(sorted(set(urls))):
         p = path_of(u)
         if p in seen:
             continue
         seen.add(p)
-        pages.append(Page(pid=i + 1, title=title_from_path(p), path=p,
-                          source="sitemap"))
+        page = Page(pid=i + 1, title=title_from_path(p), path=p,
+                    source="sitemap")
+        page.kind = sitemap_kind.get(sm) or "page"
+        pages.append(page)
     return pages, False
 
 
@@ -725,12 +753,102 @@ def audit_content(pages, site, workers=4):
         p.links_in = inbound.get(p.path, 0)
         p.links_out_n = len([t for t in getattr(p, "links_out", ()) if t in known])
 
+
+# ----------------------------------------------------------------- triage
+#
+# The client's time goes on decisions. A row with no decision to make, or one
+# the studio has already made, costs them attention and buys nothing: a list
+# of tag archives to mark "delete", or a dead login page from a membership
+# plugin removed years ago.
+#
+# So before an inventory reaches the client, two kinds of row are dealt with:
+#
+#   generated   Archives WordPress builds on its own: tag, category, author,
+#               date, taxonomy, pagination, feeds, search. Removed, unless a
+#               menu links to one, because then the client chose to show it
+#               and that is a decision. Those are kept and marked check.
+#   known       Rows the studio already knows about, listed per project in a
+#               rules file. Each rule says drop (remove, the decision is made)
+#               or check (keep, highlighted for the client to confirm).
+#
+# Nothing vanishes silently. Dropped rows go to --excluded with their reason
+# and a disposition of drop, because a dropped page still needs a redirect.
+
+GENERATED_KINDS = {"search", "taxonomy archive", "category archive", "archive",
+                   "posts archive"}
+GENERATED_PATH = re.compile(
+    r"(^|/)(tag|category|author)/[^/]+/$"
+    r"|(^|/)(feed|page/\d+|\d{4}(/\d{2}){0,2})/$"
+    r"|[?&](s|p|paged|cat|tag|author)(=|$)")
+
+
+def generated_kind(p):
+    """Why a destination is an archive WordPress generated, or ''."""
+    if p.kind in GENERATED_KINDS:
+        return p.kind
+    if GENERATED_PATH.search(p.path):
+        return "generated archive"
+    return ""
+
+
+def read_rules(path):
+    """A rules file: one rule per line, '#' for comments.
+
+        drop   /account/           membership plugin removed in 2021
+        check  /resources-*/       a listing of one resource tag, not content
+        drop   /people[0-9]/       test page
+
+    action, a path glob (fnmatch, matched against the inventory path), then the
+    reason, which is what the client reads.
+    """
+    rules = []
+    with open(path) as fh:
+        for n, line in enumerate(fh, 1):
+            line = line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            bits = line.split(None, 2)
+            if len(bits) < 3 or bits[0] not in ("drop", "check"):
+                die("%s:%d: expected 'drop|check PATH-GLOB reason'" % (path, n))
+            rules.append((bits[0], bits[1], bits[2].strip()))
+    return rules
+
+
+def triage(rows, rules, keep_generated=False):
+    """Mark each row drop, check or nothing. Returns (kept, dropped)."""
+    for p in rows:
+        for action, glob, reason in rules:
+            if fnmatch.fnmatchcase(p.path, glob):
+                p.triage, p.triage_reason = action, reason
+                break
+        else:
+            kind = generated_kind(p)
+            if kind and not keep_generated:
+                if p.menus:
+                    p.triage = "check"
+                    p.triage_reason = ("%s, generated by WordPress but linked "
+                                       "from a menu" % kind)
+                else:
+                    p.triage = "drop"
+                    p.triage_reason = ("%s, generated by WordPress: no "
+                                       "content decision to make" % kind)
+    kept = [p for p in rows if p.triage != "drop"]
+    dropped = [p for p in rows if p.triage == "drop"]
+    return kept, dropped
+
 # ----------------------------------------------------------------- output
 
 def render_markdown(rows, title, trusted_parents, status_tag):
+    """The ## Structure half of the IA source document, in the format the
+    claude.ai IA project reads: name, `path`, {template}, [status], and a note
+    as an indented line with no bullet."""
     out = io.StringIO()
     if title:
         out.write("# %s\n\n" % title)
+    if not trusted_parents:
+        # Outside ## Structure: inside it, a bare line reads as a note on a page.
+        out.write("Hierarchy inferred from URL path depth, not from the site's "
+                  "own parentage. Check it before relying on it.\n\n")
     out.write("## Structure\n\n")
     for p in rows:
         bits = ["%s- %s `%s`" % ("  " * p.depth, p.title, p.path)]
@@ -741,9 +859,9 @@ def render_markdown(rows, title, trusted_parents, status_tag):
         if status_tag:
             bits.append("[%s]" % status_tag)
         out.write(" ".join(bits) + "\n")
-    if not trusted_parents:
-        out.write("\nHierarchy inferred from URL path depth, not from the site's "
-                  "own parentage. Check it before relying on it.\n")
+        if p.triage == "check":
+            # A note, not a status: the status stays keep/new/merge/drop.
+            out.write("%s  Check: %s\n" % ("  " * p.depth, p.triage_reason))
     return out.getvalue()
 
 
@@ -760,7 +878,8 @@ def render_csv(rows, by_id=None):
                 "meta_description_len", "images", "images_no_alt",
                 "links_in", "links_out", "noindex",
                 "sessions_12mo", "entrances_12mo", "impressions_12mo",
-                "clicks_12mo", "disposition", "reason"])
+                "clicks_12mo", "triage", "triage_reason",
+                "disposition", "reason"])
     for p in rows:
         parent = by_id.get(p.parent)
         first = p.menus[0] if p.menus else None
@@ -775,7 +894,10 @@ def render_csv(rows, by_id=None):
             len(p.meta_description) if p.meta_description else "",
             p.images, p.images_no_alt, p.links_in, p.links_out_n,
             "yes" if p.noindex else "",
-            "", "", "", "", "", ""])
+            "", "", "", "",
+            p.triage, p.triage_reason,
+            "drop" if p.triage == "drop" else "",
+            p.triage_reason if p.triage == "drop" else ""])
     return out.getvalue()
 
 
@@ -829,6 +951,18 @@ def main():
                          "word count, H1, meta description, images without alt, "
                          "and how many internal links point at it. The "
                          "scriptable half of a content audit.")
+    ap.add_argument("--rules", metavar="FILE",
+                    help="per-project triage rules: 'drop|check PATH-GLOB reason' "
+                         "per line. drop removes a row the studio already knows "
+                         "is obsolete; check keeps it, highlighted for the client")
+    ap.add_argument("--keep-generated", action="store_true",
+                    help="keep archives WordPress generates (tag, category, "
+                         "author, date, search, feeds, pagination). By default "
+                         "they are removed unless a menu links to them")
+    ap.add_argument("--excluded", metavar="FILE",
+                    help="write the removed rows here, as CSV with disposition "
+                         "drop, for the redirect map. Without it they are "
+                         "listed on stderr")
     ap.add_argument("--status", default="keep", metavar="TAG",
                     help="status tag on every line, or '' for none (default: keep)")
     ap.add_argument("--title", default="", help="document title for the Markdown output")
@@ -884,12 +1018,30 @@ def main():
     roots = tree_from_parents(pages) if trusted else tree_from_paths(pages)
     rows = order(roots)
 
+    rules = read_rules(args.rules) if args.rules else []
+    rows, dropped = triage(rows, rules, args.keep_generated)
+    by_id = {p.id: p for p in pages}
+    if dropped:
+        if args.excluded:
+            with open(args.excluded, "w") as fh:
+                fh.write(render_csv(dropped, by_id))
+            warn("%d rows removed by triage, written to %s"
+                 % (len(dropped), args.excluded))
+        else:
+            warn("%d rows removed by triage (pass --excluded FILE to keep "
+                 "them for the redirect map):" % len(dropped))
+            for p in dropped:
+                warn("  %s  %s" % (p.path, p.triage_reason))
+    checks = sum(1 for p in rows if p.triage == "check")
+    if checks:
+        warn("%d rows marked check for the client" % checks)
+
     if args.format == "markdown":
         text = render_markdown(rows, args.title, trusted, args.status.strip())
         if menus:
             text += render_navigation(menus, args.url or "")
     elif args.format == "csv":
-        text = render_csv(rows, {p.id: p for p in pages})
+        text = render_csv(rows, by_id)
     else:
         text = render_json(rows)
 
