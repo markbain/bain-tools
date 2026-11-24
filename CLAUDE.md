@@ -37,8 +37,18 @@ project-specific wrapper in the project.
 ## Projects that consume these tools
 
 A project that uses a file from here (a template, a script) must not read it from this
-working checkout, whose branch changes. Point it at a tagged release or a checkout that stays
-on `develop`.
+working checkout, whose branch changes. Point it at the **stable checkout** instead: a
+sibling worktree named `<repo>-develop`, detached at the tip of `develop`.
+
+- `scripts/sync-stable.sh`, installed as the post-commit, post-merge, post-rewrite and
+  post-checkout hooks, moves it to `develop` after every one of those operations. It never
+  moves a stable checkout that has local changes.
+- Set it up per clone with `scripts/install-hooks.sh`, and re-run that after editing
+  `sync-stable.sh`, because the hooks are copies.
+- The stable checkout is permanent. Never remove it as a leftover worktree, and never work
+  in it.
+- If `develop` moves without a hook running (`git branch -f`, `git fetch x:develop`), run
+  `scripts/sync-stable.sh` by hand.
 
 ## Conventions
 
