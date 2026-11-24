@@ -1,59 +1,49 @@
 #!/usr/bin/env bash
 #
-# Render the Wordfence 2FA walkthrough for one client.
+# Render the Wordfence 2FA walkthrough as a branded PDF.
 #
-# Substitutes the client name and login URL into the master template, writes
-# the result to the client's Dropbox Dev Ops folder, and renders the branded
-# PDF with brand-doc.
+# The walkthrough is generic: it names no client and no site, so one PDF goes
+# to everybody. The only substitutions are the Wordfence and WordPress versions
+# and the capture date, taken from the manifest the capture run writes, so the
+# footer always matches the screenshots rather than being typed by hand.
 #
 # Usage:
-#   ./render.sh "Client Name" "https://example.com/wp-admin/"
+#   ./render.sh [output.pdf]
 
 set -euo pipefail
-
-CLIENT="${1:?usage: render.sh \"Client Name\" \"https://example.com/wp-admin/\"}"
-LOGIN_URL="${2:?usage: render.sh \"Client Name\" \"https://example.com/wp-admin/\"}"
 
 CONTENT_DIR="/media/data/Dropbox/Work/Content/Wordfence 2FA"
 TEMPLATE="${CONTENT_DIR}/wordfence-2fa-walkthrough-template.md"
 MANIFEST="${CONTENT_DIR}/images/manifest.json"
-DEST_DIR="/media/data/Dropbox/Work/clients/${CLIENT}/Dev Ops"
-DEST_MD="${DEST_DIR}/wordfence-2fa-walkthrough.md"
-DEST_PDF="${DEST_DIR}/wordfence-2fa-walkthrough.pdf"
+BUILD_MD="${CONTENT_DIR}/wordfence-2fa-walkthrough.md"
+OUT_PDF="${1:-${CONTENT_DIR}/wordfence-2fa-walkthrough.pdf}"
 
 [[ -f "$TEMPLATE" ]] || { echo "template not found: $TEMPLATE" >&2; exit 1; }
-[[ -d "$DEST_DIR" ]] || { echo "no Dev Ops folder for '${CLIENT}': $DEST_DIR" >&2; exit 1; }
+[[ -f "$MANIFEST" ]] || { echo "manifest not found, re-run shoot.sh: $MANIFEST" >&2; exit 1; }
 
-read_manifest() {
-  python3 -c "import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])" "$MANIFEST" "$1"
-}
-WF_VERSION="$(read_manifest wordfence)"
-WP_VERSION="$(read_manifest wordpress)"
-CAPTURE_DATE="$(read_manifest captured)"
+python3 - "$TEMPLATE" "$BUILD_MD" "$MANIFEST" <<'PY'
+import json, sys, datetime
+src, dest, manifest_path = sys.argv[1:4]
+m = json.load(open(manifest_path))
 
-# brand-doc resolves image paths relative to the Markdown file, so the images
-# have to sit beside the rendered copy, not back in the Content folder.
-mkdir -p "${DEST_DIR}/images"
-cp "${CONTENT_DIR}/images/"*.png "${DEST_DIR}/images/"
+# The date appears in prose written to a person, so day-before-month, not ISO.
+captured = datetime.date.fromisoformat(m["captured"]).strftime("%-d %B %Y")
 
-python3 - "$TEMPLATE" "$DEST_MD" "$CLIENT" "$LOGIN_URL" "$WF_VERSION" "$WP_VERSION" "$CAPTURE_DATE" <<'PY'
-import sys
-src, dest, client, url, wf, wp, date = sys.argv[1:8]
 text = open(src).read()
 for token, value in (
-    ("{{CLIENT_NAME}}", client),
-    ("{{LOGIN_URL}}", url),
-    ("{{WF_VERSION}}", wf),
-    ("{{WP_VERSION}}", wp),
-    ("{{CAPTURE_DATE}}", date),
+    ("{{WF_VERSION}}", m["wordfence"]),
+    ("{{WP_VERSION}}", m["wordpress"]),
+    ("{{CAPTURE_DATE}}", captured),
 ):
     text = text.replace(token, value)
-left = [t for t in ("{{CLIENT_NAME}}", "{{LOGIN_URL}}") if t in text]
+
+import re
+left = re.findall(r"\{\{[A-Z_]+\}\}", text)
 if left:
-    sys.exit(f"placeholders left unsubstituted: {left}")
+    sys.exit(f"placeholders left unsubstituted: {sorted(set(left))}")
 open(dest, "w").write(text)
 print(f"wrote {dest}")
 PY
 
-brand-doc "$DEST_MD" "$DEST_PDF"
-echo "PDF: ${DEST_PDF}"
+brand-doc "$BUILD_MD" "$OUT_PDF"
+echo "PDF: ${OUT_PDF}"

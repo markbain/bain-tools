@@ -8,7 +8,7 @@ Two scripts:
 | Script | What it does |
 |---|---|
 | `shoot.sh` | Builds a throwaway WordPress site, enrols one user in 2FA, captures the screens, tears the site down |
-| `render.sh` | Substitutes a client's name and login URL into the master template and renders the branded PDF |
+| `render.sh` | Fills in the captured versions and date, and renders the branded PDF |
 
 The master template and the captured PNGs live outside this repo, in
 `Work/Content/Wordfence 2FA/` in Dropbox, alongside the other client-facing
@@ -41,16 +41,20 @@ TOTP codes are computed in `capture.py` from the secret the enrolment screen
 prints, so no phone is involved. The implementation is checked against the
 RFC 6238 SHA-1 test vectors.
 
-## Rendering for a client
+## Rendering the PDF
 
 ```bash
-./render.sh "Northgate Supplies" "https://example.com/wp-admin/"
+./render.sh
 ```
 
-Writes `wordfence-2fa-walkthrough.md`, copies the images beside it, and renders
-`wordfence-2fa-walkthrough.pdf` into that client's `Dev Ops/` folder in
-Dropbox. `brand-doc` resolves image paths relative to the Markdown file, which
-is why the images are copied rather than referenced in place.
+The walkthrough names no client and no site, so one PDF goes to everybody. It
+is written next to the template in Dropbox, as
+`wordfence-2fa-walkthrough.pdf`, and sending it to a client is a matter of
+attaching it.
+
+The only substitutions are the Wordfence and WordPress versions and the capture
+date, read from `images/manifest.json`, so the footer always matches the
+screenshots. Re-run it after every `shoot.sh`.
 
 ## Known gaps
 
