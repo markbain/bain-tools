@@ -172,3 +172,29 @@ child. That is not an error in either place; it is the finding.
 ## Requires
 
 Python 3.6+, standard library only. WP-CLI only for `--wp`.
+
+## From client feedback to a draft sitemap
+
+`feedback-to-sitemap.py` closes the loop. The inventory goes to the client as a spreadsheet;
+they mark each row with a decision and notes. Export that sheet as CSV and convert it to the
+source document the claude.ai Information Architecture project charts:
+
+```bash
+feedback-to-sitemap.py feedback.csv --title "Client: draft structure" \
+  --decision-col Action --note-col "Client notes" --note-col "Editor notes" \
+  -o YYYY-MM-DD-sitemap-draft.md
+```
+
+| Decision | Status | Note added |
+|---|---|---|
+| `keep` | `[keep]` | the notes, if they say more than "keep" |
+| `rewrite` | `[keep]` | `Rewrite.` and the notes |
+| `delete` | `[drop]` | the notes, then `Redirect: to decide` |
+| `rethink` | `[keep]` | `Open question.` and the notes |
+| anything else, or blank | `[keep]` | `Open question: no decision recorded` |
+
+Each note is labelled with its column ("Client: ..."), and a note that contradicts its row's
+decision gets a `Conflict:` line for the next pass. The hierarchy comes from `tree_depth` and
+`tree_parent`. The script only records what was decided about each page; moving pages,
+grouping them and adding new ones is the IA project's job. Run it again whenever the sheet
+changes.
