@@ -95,17 +95,61 @@ number is the template and those pages are empty. And `links_in` counts links fo
 crawled set only, so a page linked only from a post, a widget or a PDF reads as an orphan
 here.
 
+## Triage
+
+The inventory goes to the client, and every row in it costs them a decision. So two kinds of
+row are dealt with before it leaves the studio.
+
+**Archives WordPress generates are removed by default**: tag, category, author, date, custom
+taxonomy, search, feeds and pagination. With `--sitemap` (or the `--url` fallback to it) each
+sub-sitemap is classified by fetching its last URL, so a site whose sitemap lists every tag
+does not hand the client hundreds of tag archives. An archive a menu links to is kept and
+marked `check`, because the client put it there. `--keep-generated` turns this off.
+
+**Rows the studio already knows about** come from a per-project rules file, `--rules FILE`:
+
+```text
+# action  path glob            reason the client reads
+drop      /login/              membership plugin, removed
+drop      /people[0-9]/        test page
+check     /video-library/      a listing of one tag's posts, not content
+```
+
+`drop` removes the row; `check` keeps it, highlighted with the reason. The first matching rule
+wins. Globs are `fnmatch` against the inventory path. The rules file names a client's pages,
+so it lives in the client's folder, never in this repo.
+
+Removed rows go to `--excluded FILE` as CSV, with `disposition` set to `drop` and the reason,
+because a removed page still needs a redirect. Without `--excluded` they are listed on stderr.
+
 ## Output
 
 `--format markdown` (default) is the nested list an IA session starts from:
 
 ```markdown
+# Example Studio
+
 ## Structure
 
 - Home `/` [keep]
 - The workshop `/workshop/` [keep]
   - The team `/workshop/team/` [keep]
+- Video library `/video-library/` [keep]
+  Check: a listing of one tag's posts, not content
+
+## Navigation
+
+### Main
+- The workshop -> `/workshop/`
+  - The team -> `/workshop/team/`
 ```
+
+It is the source document the claude.ai Information Architecture project charts, in the format
+its instructions set out (`bain-studio/studio/ia/project-instructions.md`). A row triage marks
+`check` carries its reason as a note, the indented line with no bullet, so the status stays one
+of keep, new, merge or drop. `## Navigation` appears with `--menus`, one `###` list per menu,
+nested as the menu nests. When the hierarchy had to be inferred from URL paths, a warning line
+sits between the title and `## Structure`, outside the document's sections.
 
 `--format csv` is the inventory proper: one row per destination, carrying both views and the
 empty columns for the traffic join.
@@ -117,7 +161,8 @@ empty columns for the traffic join.
 | `tree_depth`, `tree_parent` | Where it sits in the page tree |
 | `in_menus`, `menu_depth`, `menu_parent`, `menu_label` | Where it sits in the navigation, and what it is called there |
 | `sessions_12mo`, `entrances_12mo`, `impressions_12mo`, `clicks_12mo` | Empty. The stage 2 join |
-| `disposition`, `reason` | Empty. The stage 3 decision |
+| `triage`, `triage_reason` | `check` and why, for a row the client should confirm. See Triage |
+| `disposition`, `reason` | Empty. The stage 3 decision. `drop` in the `--excluded` file |
 
 A row with `tree_depth` 0 and `menu_depth` 1 is a top-level page the menu presents as a
 child. That is not an error in either place; it is the finding.
